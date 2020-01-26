@@ -39,7 +39,6 @@ func webhookMessageHandler(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	body, _ := ioutil.ReadAll(r.Body)
 	messages := message.DecodeMessage(body)
-	log.Printf("%+v\n", messages)
 	if err := r.ParseForm(); err != nil {
 		log.Println("Error", err)
 	}

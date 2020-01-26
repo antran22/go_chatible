@@ -16,7 +16,6 @@ func BuildForwardMessage(message Message, recipientId string) []Message {
 	}
 	for _, atm := range message.Content.Attachments {
 		msg := Message{
-			Sender:    nil,
 			Recipient: &user.User{ID: recipientId},
 			Content: &Content{
 				Attachment: atm,

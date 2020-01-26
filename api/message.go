@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -10,7 +11,7 @@ import (
 	"go_chatible/model/message"
 )
 
-type MessengerWorkerPool struct {
+type MessengerSenderPool struct {
 	url        string
 	msgChannel chan message.Message
 }
@@ -21,7 +22,6 @@ func sendMessage(client *http.Client, url string, msg message.Message) (*http.Re
 		return &http.Response{}, err
 	}
 	bodyReader := bytes.NewReader(body)
-	log.Println(string(body))
 	resp, err := client.Post(url, "application/json", bodyReader)
 	if err != nil {
 		return &http.Response{}, err
@@ -29,29 +29,34 @@ func sendMessage(client *http.Client, url string, msg message.Message) (*http.Re
 	return resp, nil
 }
 
-func (pool MessengerWorkerPool) SpawnWorker() {
+func (pool MessengerSenderPool) SpawnWorker(id int) {
 	client := http.Client{}
 	for msg := range pool.msgChannel {
 		resp, err := sendMessage(&client, pool.url, msg)
 		if err != nil {
-			log.Println("Error", err)
+			log.Println("Worker", id, "Messenger API Error", err)
+		} else if resp.StatusCode != 200 {
+			body, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				log.Println("Error", err)
+			}
+			log.Println("Worker", id, "Messenger API failed, response:", string(body))
 		}
-		log.Println(resp)
 	}
 
 }
 
-func (pool MessengerWorkerPool) QueueMessage(msg message.Message) {
+func (pool MessengerSenderPool) QueueMessage(msg message.Message) {
 	pool.msgChannel <- msg
 }
 
-func NewWorkerPool(size int) *MessengerWorkerPool {
-	res := &MessengerWorkerPool{
-		url:        "https://graph.facebook.com/v5.0/me/messages?access_token=" + os.Getenv("PAGE_TOKEN"),
+func NewWorkerPool(size int) *MessengerSenderPool {
+	res := &MessengerSenderPool{
+		url:        "https://graph.facebook.com/v5.0/me/messages?access_token=" + os.Getenv("PAGE_ACCESS_TOKEN"),
 		msgChannel: make(chan message.Message),
 	}
 	for w := 0; w < size; w++ {
-		go res.SpawnWorker()
+		go res.SpawnWorker(w)
 	}
 	return res
 }
