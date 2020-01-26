@@ -11,7 +11,7 @@ func FetchUser(usr *user.User) error {
 	err := api.DB.Select(usr)
 	if err != nil {
 		if err.Error() == "pg: no rows in result set" {
-			err2 := api.UserFetcher.FetchUserData(usr)
+			err2 := api.UserFetcher.FetchUser(usr)
 			if err2 != nil {
 				return err2
 			}

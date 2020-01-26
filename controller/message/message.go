@@ -19,7 +19,7 @@ func ProcessMessage(msg message.Message) {
 	} else {
 		msgs := message.BuildForwardMessage(msg, msg.Sender.ID)
 		for _, outMsg := range msgs {
-			api.MessengerSender.QueueMessage(outMsg)
+			_ = api.MessengerSender.SendMessage(outMsg)
 		}
 	}
 }

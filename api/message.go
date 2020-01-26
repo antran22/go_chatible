@@ -3,60 +3,71 @@ package api
 import (
 	"bytes"
 	"encoding/json"
-	"io/ioutil"
-	"log"
+	"fmt"
 	"net/http"
 	"os"
 
+	"go_chatible/api/worker_pool"
 	"go_chatible/model/message"
 )
 
-type MessengerSenderPool struct {
-	url        string
-	msgChannel chan message.Message
+type MessageSenderPool struct {
+	workerPool *worker_pool.WorkerPool
 }
 
-func sendMessage(client *http.Client, url string, msg message.Message) (*http.Response, error) {
+type MsgWorkerMaker struct{}
+
+type msgWorker struct {
+	client *http.Client
+	pool   *worker_pool.WorkerPool
+}
+
+func (wrk msgWorker) Work(JobData interface{}) error {
+	msg, ok := JobData.(message.Message)
+	if !ok {
+		panic("wtf")
+	}
 	body, err := json.Marshal(msg)
 	if err != nil {
-		return &http.Response{}, err
+		return err
 	}
 	bodyReader := bytes.NewReader(body)
-	resp, err := client.Post(url, "application/json", bodyReader)
+	url, ok := wrk.pool.PoolData.(string)
+	if !ok {
+		panic("wtf")
+	}
+	resp, err := wrk.client.Post(url, "application/json", bodyReader)
 	if err != nil {
-		return &http.Response{}, err
+		return err
 	}
-	return resp, nil
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("request error when sending message %s", string(body))
+	}
+	return nil
 }
 
-func (pool MessengerSenderPool) SpawnWorker(id int) {
-	client := http.Client{}
-	for msg := range pool.msgChannel {
-		resp, err := sendMessage(&client, pool.url, msg)
-		if err != nil {
-			log.Println("Worker", id, "Messenger API Error", err)
-		} else if resp.StatusCode != 200 {
-			body, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				log.Println("Error", err)
-			}
-			log.Println("Worker", id, "Messenger API failed, response:", string(body))
-		}
+func (maker MsgWorkerMaker) MakeWorker(pool *worker_pool.WorkerPool) worker_pool.Worker {
+	worker := msgWorker{
+		client: &http.Client{},
+		pool:   pool,
 	}
-
+	return worker
 }
 
-func (pool MessengerSenderPool) QueueMessage(msg message.Message) {
-	pool.msgChannel <- msg
+func NewMessageSenderPool() *MessageSenderPool {
+	url := "https://graph.facebook.com/v5.0/me/messages?access_token=" + os.Getenv("PAGE_ACCESS_TOKEN")
+	workerMaker := MsgWorkerMaker{}
+	res := MessageSenderPool{
+		workerPool: worker_pool.NewPool(url, workerMaker, 4, 4),
+	}
+	return &res
 }
 
-func NewWorkerPool(size int) *MessengerSenderPool {
-	res := &MessengerSenderPool{
-		url:        "https://graph.facebook.com/v5.0/me/messages?access_token=" + os.Getenv("PAGE_ACCESS_TOKEN"),
-		msgChannel: make(chan message.Message),
-	}
-	for w := 0; w < size; w++ {
-		go res.SpawnWorker(w)
-	}
-	return res
+func (pool *MessageSenderPool) SendMessage(msg message.Message) error {
+	err := pool.workerPool.DoJob(msg)
+	return err
+}
+
+func (pool *MessageSenderPool) Close() {
+	pool.workerPool.Close()
 }
